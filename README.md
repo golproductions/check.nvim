@@ -1,6 +1,6 @@
 # check.nvim
 
-Anti-hallucination firewall for Neovim. Validates commands before execution.
+The universal anti-hallucination engine for Neovim.
 
 ## Install
 
@@ -26,9 +26,9 @@ Or set `GOL_CLIENT_ID` environment variable instead.
 
 ## Commands
 
-- `:Check <command>` — validate a shell command
-- `:CheckSelection` — validate visually selected text
-- `:CheckSetup` — set your Client ID interactively
+- `:Check <command>`
+- `:CheckSelection`
+- `:CheckSetup`
 
 ## Get a Client ID
 
