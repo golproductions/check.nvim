@@ -1,7 +1,9 @@
 local M = {}
 
 local API = "https://triage.golproductions.com/preflight"
-local VERSION = "1.0.0"
+local INSTANT = "https://triage.golproductions.com/instant-key"
+local CHANNEL = "neovim"
+local VERSION = "1.0.1"
 
 M.config = {
   client_id = vim.env.GOL_CLIENT_ID or "",
@@ -9,8 +11,62 @@ M.config = {
   timeout = 5000,
 }
 
+local function key_file()
+  return vim.fn.stdpath("data") .. "/gol-check-key"
+end
+
+function M._load_key()
+  local f = io.open(key_file(), "r")
+  if not f then return "" end
+  local id = f:read("*a") or ""
+  f:close()
+  return vim.trim(id)
+end
+
+function M._save_key(id)
+  local f = io.open(key_file(), "w")
+  if f then
+    f:write(id)
+    f:close()
+  end
+end
+
+-- One-way hash of coarse machine facts. No personal data. Used only by the
+-- server to rate-limit free-key minting.
+local function device_fingerprint()
+  local uname = vim.loop.os_uname() or {}
+  return vim.fn.sha256(table.concat({
+    vim.fn.hostname() or "",
+    uname.sysname or "",
+    uname.machine or "",
+    os.getenv("USER") or os.getenv("USERNAME") or "",
+  }, "|"))
+end
+
+-- Mint a free key with no signup. Persists and returns it, or nil on failure.
+function M._mint_instant_key()
+  local body = vim.json.encode({ fingerprint = device_fingerprint(), channel = CHANNEL })
+  local handle = io.popen(string.format(
+    'curl -s -X POST "%s" -H "Content-Type: application/json" -H "User-Agent: neovim/%s" --max-time 10 -d \'%s\'',
+    INSTANT, VERSION, body:gsub("'", "'\\''")
+  ))
+  if not handle then return nil end
+  local out = handle:read("*a")
+  handle:close()
+  local ok, data = pcall(vim.json.decode, out)
+  if not ok or not data or not data.client_id then return nil end
+  M.config.client_id = data.client_id
+  M._save_key(data.client_id)
+  return data.client_id
+end
+
 function M.setup(opts)
   M.config = vim.tbl_deep_extend("force", M.config, opts or {})
+
+  -- Restore a previously minted key if no env var / option was provided.
+  if M.config.client_id == "" then
+    M.config.client_id = M._load_key()
+  end
 
   vim.api.nvim_create_user_command("Check", function(args)
     local cmd = args.args
@@ -35,7 +91,8 @@ function M.setup(opts)
     local id = vim.fn.input("Enter your GOL Client ID: ")
     if id ~= "" then
       M.config.client_id = id
-      vim.notify("Check: Client ID set. Add GOL_CLIENT_ID=" .. id .. " to your shell profile to persist.", vim.log.levels.INFO)
+      M._save_key(id)
+      vim.notify("Check: Client ID set and saved.", vim.log.levels.INFO)
     end
   end, { desc = "Set GOL Check Client ID" })
 end
@@ -47,13 +104,18 @@ function M.validate(command)
   end
 
   if M.config.client_id == "" then
-    vim.notify("Check: No Client ID. Run :CheckSetup or set GOL_CLIENT_ID env var.\nGet one at golproductions.com/check.html", vim.log.levels.ERROR)
-    return
+    -- No key yet: mint one instantly. No email, no browser.
+    vim.notify("Check: Activating...", vim.log.levels.INFO)
+    if not M._mint_instant_key() then
+      vim.notify("Check: could not activate. Check your connection and try again.", vim.log.levels.ERROR)
+      return
+    end
   end
 
   local body = vim.json.encode({
     command = command,
     platform = "neovim",
+    channel = CHANNEL,
     v = VERSION,
   })
 
@@ -101,8 +163,12 @@ function M._handle_response(command, response)
   local short = command:sub(1, 80)
   if data.verdict == "runnable" then
     vim.notify("Check: ✓ Runnable — " .. short, vim.log.levels.INFO)
+  elseif data.upgrade or data.error == "Daily free limit reached" then
+    -- Free wall: out of daily free checks, balance empty.
+    vim.notify("Check: You've used all 120 free checks today. Credits never expire. "
+      .. (data.upgrade or "Top up at https://www.golproductions.com/console.html"), vim.log.levels.WARN)
   else
-    vim.notify("Check: ✗ Blocked — " .. (data.reason or short), vim.log.levels.WARN)
+    vim.notify("Check: ✗ Blocked — " .. (data.reason or data.error or short), vim.log.levels.WARN)
   end
 end
 
