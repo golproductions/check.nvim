@@ -8,7 +8,7 @@ The universal anti-hallucination engine for Neovim.
 ```lua
 { "golproductions/check.nvim",
   config = function()
-    require("check").setup({ client_id = "YOUR_CLIENT_ID" })
+    require("check").setup()
   end
 }
 ```
@@ -17,12 +17,12 @@ The universal anti-hallucination engine for Neovim.
 ```lua
 use { "golproductions/check.nvim",
   config = function()
-    require("check").setup({ client_id = "YOUR_CLIENT_ID" })
+    require("check").setup()
   end
 }
 ```
 
-Or set `GOL_CLIENT_ID` environment variable instead.
+Check activates a free key on first run. No signup, no key to paste.
 
 ## Commands
 
@@ -30,6 +30,14 @@ Or set `GOL_CLIENT_ID` environment variable instead.
 - `:CheckSelection`
 - `:CheckSetup`
 
-## Get a Client ID
+## Bring your own key (optional)
 
-Free at [golproductions.com/check](https://www.golproductions.com/check.html)
+A key is minted for you automatically. To reuse an existing Client ID, pass it to setup or set the `GOL_CLIENT_ID` environment variable:
+
+```lua
+require("check").setup({ client_id = "your_key" })
+```
+
+## Pricing
+
+120 free checks every day. Then $0.0068 AUD per check. Credits never expire.
