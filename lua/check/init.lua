@@ -11,19 +11,30 @@ M.config = {
   timeout = 5000,
 }
 
+-- One free GOL Client ID per machine, shared by every Check client
+-- (npm hook, MCP, editors). All clients read and write this file.
 local function key_file()
+  return vim.fn.expand("~") .. "/.check/key"
+end
+
+local function legacy_key_file()
   return vim.fn.stdpath("data") .. "/gol-check-key"
 end
 
 function M._load_key()
-  local f = io.open(key_file(), "r")
-  if not f then return "" end
-  local id = f:read("*a") or ""
-  f:close()
-  return vim.trim(id)
+  for _, path in ipairs({ key_file(), legacy_key_file() }) do
+    local f = io.open(path, "r")
+    if f then
+      local id = vim.trim(f:read("*a") or "")
+      f:close()
+      if id ~= "" then return id end
+    end
+  end
+  return ""
 end
 
 function M._save_key(id)
+  vim.fn.mkdir(vim.fn.expand("~") .. "/.check", "p")
   local f = io.open(key_file(), "w")
   if f then
     f:write(id)
@@ -31,14 +42,21 @@ function M._save_key(id)
   end
 end
 
--- One-way hash of coarse machine facts. No personal data. Used only by the
--- server to rate-limit free-key minting.
+-- One-way hash of coarse machine facts. No personal data. The recipe
+-- (hostname|platform|arch|username, Node.js-style tokens) is shared by every
+-- Check client so all tools on one machine resolve to the same free key.
 local function device_fingerprint()
   local uname = vim.loop.os_uname() or {}
+  local sys = (uname.sysname or ""):lower()
+  local plat = "linux"
+  if sys:find("windows") then plat = "win32"
+  elseif sys:find("darwin") then plat = "darwin" end
+  local mach = (uname.machine or ""):lower()
+  local arch = (mach:find("arm64") or mach:find("aarch64")) and "arm64" or "x64"
   return vim.fn.sha256(table.concat({
     vim.fn.hostname() or "",
-    uname.sysname or "",
-    uname.machine or "",
+    plat,
+    arch,
     os.getenv("USER") or os.getenv("USERNAME") or "",
   }, "|"))
 end
